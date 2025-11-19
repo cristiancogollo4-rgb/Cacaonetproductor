@@ -1,0 +1,38 @@
+/* src/index.css - VERSIÓN CORREGIDA */
+
+:root {
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  
+  /* Reseteamos colores para que no interfieran con Material UI */
+  color-scheme: light;
+  background-color: #F0F2F5; /* Fondo gris suave */
+}
+
+/* 1. ELIMINAMOS EL FLEXBOX DEL BODY */
+body {
+  margin: 0;
+  padding: 0;
+  display: block; /* Importante: Bloque normal, no flex centrado */
+  width: 100vw;
+  min-height: 100vh;
+  overflow-x: hidden; /* Evita scroll horizontal */
+}
+
+/* 2. HACEMOS QUE LA APP (ROOT) OCUPE TODO EL ESPACIO */
+#root {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;        
+  flex-direction: column; /* Para que el footer se vaya al fondo si es necesario */
+  margin: 0;
+  padding: 0;
+  text-align: left; /* Alineación normal a la izquierda */
+}
+
+/* Reseteo básico para enlaces */
+a {
+  text-decoration: none;
+  color: inherit;
+}

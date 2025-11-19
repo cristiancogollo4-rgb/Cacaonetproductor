@@ -1,0 +1,23 @@
+/* src/App.css */
+
+/* 1. El contenedor principal debe ocupar todo el ancho disponible */
+#root {
+  width: 100%;
+  max-width: 100%; /* Eliminamos el límite de 1280px */
+  margin: 0;
+  padding: 0;
+  text-align: left; /* Restauramos la alineación normal */
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 2. Aseguramos que el body no tenga márgenes extraños */
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  min-height: 100vh;
+  background-color: #f0f2f5; /* Tu color de fondo */
+  overflow-x: hidden; /* Evita scroll horizontal accidental */
+}
