@@ -1,9 +1,13 @@
-// src/components/AddDeliveryForm.jsx
 import React, { useState } from 'react';
 import {
     Box, Typography, TextField, Button, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Alert
 } from '@mui/material';
-import { db, collection, addDoc, serverTimestamp } from '../firebase';
+
+// --- CORRECCIÓN DE IMPORTACIONES ---
+// 1. Importamos la conexión a la base de datos desde tu archivo local
+import { db } from '../firebase';
+// 2. Importamos las funciones lógicas desde la librería oficial de Firebase
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 const AddDeliveryForm = ({ open, onClose, userId, onDeliveryAdded }) => {
     const [weightKg_Bruto, setWeightKg_Bruto] = useState('');
@@ -15,20 +19,15 @@ const AddDeliveryForm = ({ open, onClose, userId, onDeliveryAdded }) => {
         setError('');
         setLoading(true);
 
-        // --- DEPURACIÓN: Revisamos los datos antes de enviar ---
         console.log("AddDeliveryForm - Iniciando guardado.");
-        console.log("userId:", userId);
-        console.log("weightKg_Bruto:", weightKg_Bruto);
 
         if (!userId) {
-            console.error("Error Crítico: userId es nulo o indefinido.");
             setError("Error de usuario. Por favor, vuelve a iniciar sesión.");
             setLoading(false);
             return;
         }
 
         if (!weightKg_Bruto || parseFloat(weightKg_Bruto) <= 0) {
-            console.error("Error de Validación: Peso inválido.");
             setError('Por favor, ingresa un peso válido.');
             setLoading(false);
             return;
@@ -36,13 +35,12 @@ const AddDeliveryForm = ({ open, onClose, userId, onDeliveryAdded }) => {
 
         try {
             const lotId = `LOT-${userId.slice(-4)}-${Date.now()}`;
-            console.log("ID de Lote generado:", lotId);
 
             const newDelivery = {
                 lotId,
                 producerId: userId,
                 weightKg_Bruto: parseFloat(weightKg_Bruto),
-                deliveryDate: serverTimestamp(),
+                deliveryDate: serverTimestamp(), // Usamos la función oficial aquí
                 status: 'Pendiente de Análisis',
                 paymentStatus: 'Pendiente de Pago',
                 operatorId: null,
@@ -56,28 +54,21 @@ const AddDeliveryForm = ({ open, onClose, userId, onDeliveryAdded }) => {
                 totalPayment: null,
             };
 
-            console.log("Objeto a guardar en Firestore:", newDelivery);
+            console.log("Guardando en Firestore:", newDelivery);
             
-            // --- DEPURACIÓN: El paso más crítico ---
-            console.log("Intentando escribir en la colección 'deliveries'...");
+            // Usamos la colección y la función addDoc importadas correctamente
             const docRef = await addDoc(collection(db, "deliveries"), newDelivery);
-            console.log("Entrega guardada exitosamente con ID:", docRef.id);
+            console.log("Documento creado con ID:", docRef.id);
 
-            onDeliveryAdded();
+            if (onDeliveryAdded) onDeliveryAdded();
             onClose();
             setWeightKg_Bruto('');
 
         } catch (err) {
-            // --- DEPURACIÓN: Atrapamos cualquier error ---
-            console.error("ERROR COMPLETO al agregar entrega:", err);
-            console.error("Código de error:", err.code);
-            console.error("Mensaje de error:", err.message);
-            
-            // Mensaje más amigable para el usuario
-            setError(`No se pudo guardar la entrega. Error: ${err.message}`);
+            console.error("ERROR al guardar:", err);
+            setError(`No se pudo guardar. Error: ${err.message}`);
         } finally {
             setLoading(false);
-            console.log("Proceso de guardado finalizado.");
         }
     };
 
@@ -105,8 +96,8 @@ const AddDeliveryForm = ({ open, onClose, userId, onDeliveryAdded }) => {
                     />
                 </DialogContent>
                 <DialogActions sx={{ p: 2 }}>
-                    <Button onClick={onClose} disabled={loading}>Cancelar</Button>
-                    <Button type="submit" variant="contained" disabled={loading} sx={{ bgcolor: '#795548' }}>
+                    <Button onClick={onClose} disabled={loading} color="inherit">Cancelar</Button>
+                    <Button type="submit" variant="contained" disabled={loading} sx={{ bgcolor: '#795548', '&:hover': { bgcolor: '#5D4037' } }}>
                         {loading ? <CircularProgress size={24} color="inherit" /> : 'Guardar Entrega'}
                     </Button>
                 </DialogActions>

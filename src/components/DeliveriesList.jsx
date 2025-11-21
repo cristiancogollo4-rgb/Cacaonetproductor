@@ -1,16 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { db, collection, query, where, orderBy, onSnapshot } from '../firebase.js';
+
+// --- 1. CORRECCIÓN DE IMPORTACIONES ---
+// A. Importamos SOLO la conexión desde tu archivo local
+import { db } from '../firebase'; 
+// B. Importamos TODAS las funciones desde la librería oficial
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
+
 import {
-    Box, Typography, Button, Paper, Chip, Dialog, DialogContent, 
-    Skeleton, Fab, Grid, Divider, LinearProgress, Stack, IconButton, Stepper, Step, StepLabel
+    Box, Typography, Button, Paper, Chip, Dialog, DialogContent, DialogTitle, DialogActions,
+    Skeleton, Fab, Grid, Stack, IconButton, Stepper, Step, StepLabel
 } from '@mui/material';
 import {
-    CalendarToday, CheckCircle, Warning, Cancel, AttachMoney, HourglassEmpty, 
-    Add as AddIcon, Close, SearchOff, Science, WorkspacePremium, LocalShipping
+    CalendarToday, CheckCircle, Warning, Cancel,
+    Add as AddIcon, Close, SearchOff, Science, LocalShipping,
+    AccountBalance
 } from '@mui/icons-material';
+
 import AddDeliveryForm from './AddDeliveryForm';
 
-// --- 1. CONFIGURACIÓN VISUAL ---
+// --- CONFIGURACIÓN VISUAL ---
 const getStatusConfig = (status) => {
     switch (status) {
         case 'Pendiente de Análisis': 
@@ -26,14 +34,6 @@ const getStatusConfig = (status) => {
     }
 };
 
-const getGradeColor = (grade) => {
-    const g = grade ? grade.toString().toUpperCase() : '';
-    if (g === 'A' || g === 'PREMIUM') return '#2E7D32';
-    if (g === 'B' || g === 'ESTÁNDAR' || g === 'ESTANDAR') return '#F9A825';
-    if (g === 'C') return '#EF6C00';
-    return '#C62828'; 
-};
-
 const DeliveriesList = ({ userId }) => {
     const [deliveries, setDeliveries] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -42,16 +42,71 @@ const DeliveriesList = ({ userId }) => {
     const [selectedDelivery, setSelectedDelivery] = useState(null);
     const [openAddForm, setOpenAddForm] = useState(false);
 
+    // Estados de validación
+    const [isProfileComplete, setIsProfileComplete] = useState(false);
+    const [showProfileAlert, setShowProfileAlert] = useState(false);
+    const [missingFields, setMissingFields] = useState([]);
+
+    // Función para validar texto
+    const isValidText = (text) => {
+        return text && typeof text === 'string' && text.trim().length > 0;
+    };
+
     useEffect(() => {
         if (!userId) return;
         setLoading(true);
+
+        // 1. Cargar Entregas
         const q = query(collection(db, "deliveries"), where("producerId", "==", userId), orderBy("deliveryDate", "desc"));
         const unsubscribe = onSnapshot(q, (snapshot) => {
             setDeliveries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
             setLoading(false);
         }, (err) => { console.error(err); setLoading(false); });
+
+        // 2. VALIDAR PERFIL
+        const checkProfile = async () => {
+            try {
+                const docRef = doc(db, "producers", userId);
+                const docSnap = await getDoc(docRef);
+                
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    
+                    // Reglas de validación
+                    const checks = [
+                        { label: 'Nombre Completo', valid: isValidText(data.producerName) },
+                        { label: 'Nombre de Finca', valid: isValidText(data.fincaName) },
+                        { label: 'Celular', valid: isValidText(data.phone) },
+                        { label: 'Ubicación', valid: (isValidText(data.location) || isValidText(data.municipality)) },
+                        { label: 'Banco', valid: isValidText(data.bankName) },
+                        { label: 'Tipo de Cuenta', valid: isValidText(data.accountType) },
+                        { label: 'Número de Cuenta', valid: isValidText(data.accountNumber) }
+                    ];
+
+                    const missing = checks.filter(c => !c.valid).map(c => c.label);
+                    setMissingFields(missing);
+                    setIsProfileComplete(missing.length === 0); 
+
+                } else {
+                    setIsProfileComplete(false);
+                    setMissingFields(['Perfil no creado']);
+                }
+            } catch (error) {
+                console.error("Error validando perfil:", error);
+            }
+        };
+        checkProfile();
+
         return () => unsubscribe();
     }, [userId]);
+
+    const handleAddClick = () => {
+        if (isProfileComplete) {
+            setOpenAddForm(true);
+        } else {
+            setShowProfileAlert(true);
+        }
+    };
 
     const filteredDeliveries = useMemo(() => {
         switch (selectedTab) {
@@ -66,31 +121,23 @@ const DeliveriesList = ({ userId }) => {
     const handleCloseDetails = () => { setOpenDetails(false); setSelectedDelivery(null); };
     const tabs = [{ label: 'Todos', value: 'Todos' }, { label: 'En Análisis', value: 'Pendiente de Análisis' }, { label: 'Inventario', value: 'Pendiente de Pago' }, { label: 'Vendidos', value: 'Pagado' }];
 
-    const formatMoney = (amount) => {
-        if (amount === undefined || amount === null) return '$0';
-        return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(amount);
-    };
-
-    // --- CAMBIO AQUÍ: Nuevos nombres para la línea de tiempo ---
     const steps = ['Recibido', 'Análisis', 'Inventario', 'Vendido'];
     
     const getActiveStep = (status) => {
-        if (status === 'Pendiente de Análisis') return 1; // Está en Análisis
-        if (status === 'Pendiente de Pago') return 2;     // Ya pasó análisis, está en Inventario
-        if (status === 'Pagado') return 4;                // Ya se vendió (paso final completado)
+        if (status === 'Pendiente de Análisis') return 1; 
+        if (status === 'Pendiente de Pago') return 2;     
+        if (status === 'Pagado') return 4;                
         return 0;
     };
 
     return (
         <Box sx={{ width: '100%' }}>
-            {/* Header */}
             <Box sx={{ mb: 2 }}>
                 <Typography variant="h5" sx={{ color: '#5D4037', fontWeight: 'bold' }}>
                     Mis Entregas <span style={{ fontSize: '0.8em', color: '#999' }}>({filteredDeliveries.length})</span>
                 </Typography>
             </Box>
 
-            {/* Tabs */}
             <Box sx={{ display: 'flex', gap: 1, overflowX: 'auto', mb: 3, pb: 1 }}>
                 {tabs.map((tab) => (
                     <Button key={tab.value} variant={selectedTab === tab.value ? 'contained' : 'outlined'} onClick={() => setSelectedTab(tab.value)} size="small" sx={{ borderRadius: 5, bgcolor: selectedTab === tab.value ? '#795548' : 'transparent', color: selectedTab === tab.value ? 'white' : '#795548', borderColor: '#795548', whiteSpace: 'nowrap' }}>
@@ -99,7 +146,6 @@ const DeliveriesList = ({ userId }) => {
                 ))}
             </Box>
 
-            {/* Lista */}
             {loading ? (
                 <Grid container spacing={2} sx={{ width: '100%' }}>
                     {[...Array(3)].map((_, i) => <Grid item xs={12} sm={6} md={4} key={i}><Skeleton height={150} sx={{ borderRadius: 3 }} /></Grid>)}
@@ -141,21 +187,21 @@ const DeliveriesList = ({ userId }) => {
                 </Grid>
             )}
 
-            <Fab color="primary" sx={{ position: 'fixed', bottom: 80, right: 30, bgcolor: '#795548', zIndex: 2000 }} onClick={() => setOpenAddForm(true)}>
+            <Fab 
+                color="primary" 
+                sx={{ position: 'fixed', bottom: 80, right: 30, bgcolor: '#795548', zIndex: 2000 }} 
+                onClick={handleAddClick}
+            >
                 <AddIcon />
             </Fab>
 
             <AddDeliveryForm open={openAddForm} onClose={() => setOpenAddForm(false)} userId={userId} onDeliveryAdded={() => {}} />
 
-            {/* --- DIÁLOGO DE DETALLES --- */}
             <Dialog open={openDetails} onClose={handleCloseDetails} fullWidth maxWidth="sm" PaperProps={{ sx: { borderRadius: 4, overflow: 'hidden' } }}>
                 {selectedDelivery && (() => {
                     const statusConfig = getStatusConfig(selectedDelivery.status);
-                    const isAnalyzed = !!selectedDelivery.qualityGrade;
-
                     return (
                         <>
-                            {/* HEADER */}
                             <Box sx={{ bgcolor: statusConfig.color, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'white' }}>
                                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                                     {statusConfig.icon}
@@ -163,121 +209,66 @@ const DeliveriesList = ({ userId }) => {
                                 </Box>
                                 <IconButton onClick={handleCloseDetails} sx={{ color: 'white' }}><Close /></IconButton>
                             </Box>
-
                             <DialogContent sx={{ p: 0 }}>
-                                {/* INFO LOTE */}
                                 <Box sx={{ p: 3, bgcolor: '#FAFAFA', borderBottom: '1px solid #eee' }}>
                                     <Grid container alignItems="center">
-                                        <Grid item xs={6}>
-                                            <Typography variant="caption" color="text.secondary">ID LOTE</Typography>
-                                            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
-                                                {selectedDelivery.id ? selectedDelivery.id.substring(0, 8).toUpperCase() : '---'}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={6} sx={{ textAlign: 'right' }}>
-                                            <Typography variant="caption" color="text.secondary">PESO BRUTO</Typography>
-                                            <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#3e2723' }}>
-                                                {selectedDelivery.weightKg_Bruto} Kg
-                                            </Typography>
-                                        </Grid>
+                                            <Grid item xs={6}>
+                                                <Typography variant="caption" color="text.secondary">ID LOTE</Typography>
+                                                <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
+                                                    {selectedDelivery.id ? selectedDelivery.id.substring(0, 8).toUpperCase() : '---'}
+                                                </Typography>
+                                            </Grid>
+                                            <Grid item xs={6} sx={{ textAlign: 'right' }}>
+                                                <Typography variant="caption" color="text.secondary">PESO BRUTO</Typography>
+                                                <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#3e2723' }}>
+                                                    {selectedDelivery.weightKg_Bruto} Kg
+                                                </Typography>
+                                            </Grid>
                                     </Grid>
                                 </Box>
-
-                                {/* STEPPER (LÍNEA DE TRAZABILIDAD) */}
                                 <Box sx={{ px: 2, py: 3 }}>
                                     <Stepper activeStep={getActiveStep(selectedDelivery.status)} alternativeLabel>
                                         {steps.map((label) => (
-                                            <Step key={label}>
-                                                <StepLabel>{label}</StepLabel>
-                                            </Step>
+                                            <Step key={label}><StepLabel>{label}</StepLabel></Step>
                                         ))}
                                     </Stepper>
-                                </Box>
-
-                                <Divider />
-
-                                {/* CONTENIDO PRINCIPAL */}
-                                <Box sx={{ p: 3 }}>
-                                    {!isAnalyzed ? (
-                                        // VISTA: ANÁLISIS PENDIENTE
-                                        <Box sx={{ textAlign: 'center', py: 2 }}>
-                                            <Paper elevation={0} sx={{ bgcolor: '#FFF3E0', p: 3, borderRadius: 2, mb: 2 }}>
-                                                <Science sx={{ fontSize: 50, color: '#F57C00', mb: 1 }} />
-                                                <Typography variant="h6" gutterBottom sx={{ color: '#E65100' }}>
-                                                    Muestra en Laboratorio
-                                                </Typography>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Estamos analizando la humedad, fermentación y calidad física de tu entrega. 
-                                                    Una vez completado, el lote pasará a inventario.
-                                                </Typography>
-                                            </Paper>
-                                            {/* Se eliminó el mensaje de "Tiempo estimado" como pediste */}
-                                        </Box>
-                                    ) : (
-                                        // VISTA: ANÁLISIS COMPLETADO
-                                        <Box>
-                                            <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold', color: '#5D4037' }}>
-                                                RESULTADOS DE CALIDAD
-                                            </Typography>
-                                            
-                                            <Paper elevation={0} sx={{ 
-                                                bgcolor: getGradeColor(selectedDelivery.qualityGrade), 
-                                                color: 'white', p: 2, borderRadius: 3, mb: 3,
-                                                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                                            }}>
-                                                <Box>
-                                                    <Typography variant="caption" sx={{ opacity: 0.9 }}>CALIFICACIÓN GLOBAL</Typography>
-                                                    <Typography variant="h3" sx={{ fontWeight: 'bold' }}>GRADO {selectedDelivery.qualityGrade}</Typography>
-                                                </Box>
-                                                <WorkspacePremium sx={{ fontSize: 50, opacity: 0.9 }} />
-                                            </Paper>
-
-                                            <Grid container spacing={2} sx={{ mb: 3 }}>
-                                                <Grid item xs={6}>
-                                                    <Box sx={{ p: 1.5, border: '1px solid #eee', borderRadius: 2 }}>
-                                                        <Typography variant="caption" color="text.secondary">HUMEDAD</Typography>
-                                                        <Typography variant="h6" color="#0277BD">{selectedDelivery.moisturePercentage || 0}%</Typography>
-                                                        <LinearProgress variant="determinate" value={Number(selectedDelivery.moisturePercentage || 0) * 5} sx={{ mt: 0.5, height: 4 }} />
-                                                    </Box>
-                                                </Grid>
-                                                <Grid item xs={6}>
-                                                    <Box sx={{ p: 1.5, border: '1px solid #eee', borderRadius: 2 }}>
-                                                        <Typography variant="caption" color="text.secondary">FERMENTACIÓN</Typography>
-                                                        <Typography variant="h6" color="#7B1FA2">{selectedDelivery.fermentationScore || 0}%</Typography>
-                                                        <LinearProgress variant="determinate" color="secondary" value={Number(selectedDelivery.fermentationScore || 0)} sx={{ mt: 0.5, height: 4 }} />
-                                                    </Box>
-                                                </Grid>
-                                            </Grid>
-
-                                            <Paper elevation={0} sx={{ bgcolor: '#F1F8E9', p: 2, borderRadius: 3, border: '1px solid #C5E1A5' }}>
-                                                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                                    <Box>
-                                                        <Typography variant="caption" sx={{ color: '#33691E', fontWeight: 'bold' }}>VALOR DE VENTA</Typography>
-                                                        <Typography variant="h4" sx={{ color: '#33691E', fontWeight: 'bold' }}>
-                                                            {formatMoney(selectedDelivery.totalPayment)}
-                                                        </Typography>
-                                                    </Box>
-                                                    <Chip 
-                                                        label={selectedDelivery.paymentStatus === 'Pagado' ? 'VENDIDO' : 'EN INVENTARIO'} 
-                                                        color={selectedDelivery.paymentStatus === 'Pagado' ? 'success' : 'info'} 
-                                                        sx={{ fontWeight: 'bold' }}
-                                                    />
-                                                </Stack>
-                                                {selectedDelivery.pricePerKg && (
-                                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                                                        Valorado a {formatMoney(selectedDelivery.pricePerKg)} por Kg
-                                                    </Typography>
-                                                )}
-                                            </Paper>
-                                        </Box>
-                                    )}
                                 </Box>
                             </DialogContent>
                         </>
                     );
                 })()}
             </Dialog>
+
+            <Dialog open={showProfileAlert} onClose={() => setShowProfileAlert(false)}>
+                <DialogTitle sx={{ display: 'flex', alignItems: 'center', color: '#D32F2F', fontWeight: 'bold' }}>
+                    <Warning sx={{ mr: 1 }} /> Acción Requerida
+                </DialogTitle>
+                <DialogContent>
+                    <Typography variant="body1" sx={{ mb: 2 }}>
+                        Para gestionar entregas y pagos, necesitamos que completes tu perfil.
+                    </Typography>
+                    <Paper sx={{ p: 2, bgcolor: '#FFEBEE', color: '#C62828' }} variant="outlined">
+                        <Typography variant="subtitle2" fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                            <Cancel fontSize="small" sx={{ mr: 1 }} /> DATOS FALTANTES:
+                        </Typography>
+                        {missingFields.length > 0 ? (
+                            <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                                {missingFields.map((field, index) => (
+                                    <li key={index}><Typography variant="body2">{field}</Typography></li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <Typography variant="body2">Cargando información...</Typography>
+                        )}
+                    </Paper>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowProfileAlert(false)} color="inherit">Cancelar</Button>
+                    <Button variant="contained" color="primary" onClick={() => window.location.reload()}>Ir a Perfil (Recargar)</Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };
+
 export default DeliveriesList;

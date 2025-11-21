@@ -99,7 +99,7 @@ const GlobalHistory = ({ userId }) => {
                     if (safePeso > 0) sumKilos += safePeso;
 
                     // 2. Suma Financiera (Solo Pagados)
-                    if (data.status === 'Pagado' && data.totalPayment) {
+                    if (data.status === 'Vendido' && data.totalPayment) {
                         const pago = parseFloat(data.totalPayment);
                         if (!isNaN(pago)) {
                             sumEarnings += pago;
